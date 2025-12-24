@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Современный Сапер</title>
+    <style>
+        :root {
+            --bg-color: #1e293b;
+            --panel-bg: #334155;
+            --cell-hidden: #475569;
+            --cell-hover: #64748b;
+            --cell-revealed: #e2e8f0;
+            --accent: #3b82f6;
+            --text-color: #f1f5f9;
+            --danger: #ef4444;
+            --success: #22c55e;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            user-select: none;
+        }
+
+        h1 { margin-bottom: 10px; font-weight: 300; letter-spacing: 2px; }
+
+        .game-container {
+            background-color: var(--panel-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        /* Верхняя панель: Статистика и кнопки */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .stat-box {
+            background: rgba(0,0,0,0.2);
+            padding: 8px 15px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            background-color: var(--cell-hidden);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+
+        button:hover { background-color: var(--cell-hover); }
+        button.active { background-color: var(--accent); }
+        button.reset-btn { background-color: var(--accent); font-weight: bold; }
+
+        /* Игровое поле */
+        #grid {
+            display: grid;
+            gap: 2px;
+            background-color: var(--panel-bg);
+            border: 4px solid var(--panel-bg);
+            border-radius: 4px;
+        }
+
+        .cell {
+            width: 30px;
+            height: 30px;
+            background-color: var(--cell-hidden);
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .cell:hover:not(.revealed) { background-color: var(--cell-hover); transform: scale(1.05); }
+        
+        .cell.revealed {
+            background-color: var(--cell-revealed);
+            color: #333;
+            cursor: default;
+            transform: none;
+        }
+
+        .cell.mine { background-color: var(--danger); color: white; }
+        .cell.flag { color: var(--danger); }
+
+        /* Цвета цифр */
+        .c-1 { color: #2563eb; } /* Синий */
+        .c-2 { color: #16a34a; } /* Зеленый */
+        .c-3 { color: #dc2626; } /* Красный */
+        .c-4 { color: #7c3aed; } /* Фиолетовый */
+        .c-5 { color: #db2777; }
+        .c-6 { color: #0891b2; }
+        .c-7 { color: #475569; }
+        .c-8 { color: #1e293b; }
+
+        /* Сообщение о победе/поражении */
+        #message {
+            height: 20px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        .win-msg { color: var(--success); }
+        .lose-msg { color: var(--danger); }
+
+    </style>
+</head>
+<body>
+
+    <h1>САПЕР</h1>
+
+    <div class="game-container">
+        
+        <div class="controls">
+            <button onclick="setDifficulty('easy')" id="btn-easy" class="active">Легко</button>
+            <button onclick="setDifficulty('medium')" id="btn-medium">Средне</button>
+            <button onclick="setDifficulty('hard')" id="btn-hard">Сложно</button>
+        </div>
+
+        <div class="header">
+            <div class="stat-box">🚩 <span id="mines-count">10</span></div>
+            <button class="reset-btn" onclick="initGame()">🔄 Заново</button>
+            <div class="stat-box">⏱️ <span id="timer">000</span></div>
+        </div>
+
+        <div id="message"></div>
+        <div id="grid"></div>
+    </div>
+
+    <script>
+        // Настройки игры
+        const config = {
+            easy: { rows: 9, cols: 9, mines: 10 },
+            medium: { rows: 16, cols: 16, mines: 40 },
+            hard: { rows: 16, cols: 30, mines: 99 }
+        };
+
+        let currentDifficulty = 'easy';
+        let grid = [];
+        let rows, cols, minesCount;
+        let flagsLeft;
+        let isGameOver = false;
+        let isFirstClick = true;
+        let timerInterval;
+        let timeElapsed = 0;
+
+        const gridElement = document.getElementById('grid');
+        const minesDisplay = document.getElementById('mines-count');
+        const timerDisplay = document.getElementById('timer');
+        const messageDisplay = document.getElementById('message');
+
+        // Инициализация игры
+        function initGame() {
+            // Сброс переменных
+            const settings = config[currentDifficulty];
+            rows = settings.rows;
+            cols = settings.cols;
+            minesCount = settings.mines;
+            flagsLeft = minesCount;
+            grid = [];
+            isGameOver = false;
+            isFirstClick = true;
+            timeElapsed = 0;
+            
+            // Сброс UI
+            clearInterval(timerInterval);
+            timerDisplay.textContent = '000';
+            minesDisplay.textContent = flagsLeft;
+            messageDisplay.textContent = '';
+            messageDisplay.className = '';
+            
+            // Настройка CSS Grid сетки
+            gridElement.style.gridTemplateColumns = `repeat(${cols}, 30px)`;
+            gridElement.innerHTML = '';
+
+            // Создание пустой сетки
+            for (let r = 0; r < rows; r++) {
+                let row = [];
+                for (let c = 0; c < cols; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    
+                    // Обработчики событий
+                    cell.addEventListener('click', () => handleClick(r, c));
+                    cell.addEventListener('contextmenu', (e) => handleRightClick(e, r, c));
+                    
+                    gridElement.appendChild(cell);
+                    row.push({
+                        element: cell,
+                        isMine: false,
+                        isRevealed: false,
+                        isFlagged: false,
+                        neighborMines: 0
+                    });
+                }
+                grid.push(row);
+            }
+        }
+
+        // Выбор сложности
+        function setDifficulty(level) {
+            currentDifficulty = level;
+            document.querySelectorAll('.controls button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`btn-${level}`).classList.add('active');
+            initGame();
+        }
+
+        // Запуск таймера
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                timeElapsed++;
+                timerDisplay.textContent = timeElapsed.toString().padStart(3, '0');
+            }, 1000);
+        }
+
+        // Генерация мин (исключая первую нажатую клетку)
+        function placeMines(excludeRow, excludeCol) {
+            let minesPlaced = 0;
+            while (minesPlaced < minesCount) {
+                const r = Math.floor(Math.random() * rows);
+                const c = Math.floor(Math.random() * cols);
+
+                // Не ставим мину там, где уже есть, и вокруг первого клика
+                if (!grid[r][c].isMine && (Math.abs(r - excludeRow) > 1 || Math.abs(c - excludeCol) > 1)) {
+                    grid[r][c].isMine = true;
+                    minesPlaced++;
+                }
+            }
+
+            // Подсчет цифр вокруг мин
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (!grid[r][c].isMine) {
+                        grid[r][c].neighborMines = countNeighbors(r, c);
+                    }
+                }
+            }
+        }
+
+        // Подсчет соседей-мин
+        function countNeighbors(r, c) {
+            let count = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    const nr = r + i;
+                    const nc = c + j;
+                    if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc].isMine) {
+                        count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        // Клик левой кнопкой (открытие)
+        function handleClick(r, c) {
+            if (isGameOver || grid[r][c].isFlagged || grid[r][c].isRevealed) return;
+
+            if (isFirstClick) {
+                placeMines(r, c);
+                isFirstClick = false;
+                startTimer();
+            }
+
+            const cell = grid[r][c];
+
+            if (cell.isMine) {
+                gameOver(false);
+            } else {
+                revealCell(r, c);
+                checkWin();
+            }
+        }
+
+        // Рекурсивное открытие пустых клеток
+        function revealCell(r, c) {
+            const cell = grid[r][c];
+            if (cell.isRevealed || cell.isFlagged) return;
+
+            cell.isRevealed = true;
+            cell.element.classList.add('revealed');
+
+            if (cell.neighborMines > 0) {
+                cell.element.textContent = cell.neighborMines;
+                cell.element.classList.add(`c-${cell.neighborMines}`);
+            } else {
+                // Если 0 мин вокруг, открываем соседей
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        const nr = r + i;
+                        const nc = c + j;
+                        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                            revealCell(nr, nc);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Клик правой кнопкой (Флажок)
+        function handleRightClick(e, r, c) {
+            e.preventDefault();
+            if (isGameOver || grid[r][c].isRevealed) return;
+
+            const cell = grid[r][c];
+            if (cell.isFlagged) {
+                cell.isFlagged = false;
+                cell.element.classList.remove('flag');
+                cell.element.textContent = '';
+                flagsLeft++;
+            } else {
+                if (flagsLeft > 0) {
+                    cell.isFlagged = true;
+                    cell.element.classList.add('flag');
+                    cell.element.textContent = '🚩';
+                    flagsLeft--;
+                }
+            }
+            minesDisplay.textContent = flagsLeft;
+        }
+
+        // Конец игры
+        function gameOver(win) {
+            isGameOver = true;
+            clearInterval(timerInterval);
+
+            if (win) {
+                messageDisplay.textContent = "ПОБЕДА! 🎉";
+                messageDisplay.className = 'win-msg';
+            } else {
+                messageDisplay.textContent = "ВЗРЫВ! 💥";
+                messageDisplay.className = 'lose-msg';
+                // Показать все мины
+                grid.forEach(row => {
+                    row.forEach(cell => {
+                        if (cell.isMine) {
+                            cell.element.classList.add('mine');
+                            cell.element.textContent = '💣';
+                        }
+                    });
+                });
+            }
+        }
+
+        // Проверка на победу
+        function checkWin() {
+            let revealedCount = 0;
+            grid.forEach(row => {
+                row.forEach(cell => {
+                    if (cell.isRevealed) revealedCount++;
+                });
+            });
+
+            if (revealedCount === (rows * cols - minesCount)) {
+                gameOver(true);
+            }
+        }
+
+        // Старт при загрузке
+        initGame();
+
+    </script>
+</body>
+</html>
